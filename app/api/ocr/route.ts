@@ -7,6 +7,7 @@ interface Delivery {
   calle: string;
   numero: string;
   sector: string;
+  cp: string;
   ubicacion: string;
   cliente: string;
   telefono: string;
@@ -158,6 +159,7 @@ export async function POST(request: NextRequest) {
               "   - Calle: nombre de la calle\n" +
               "   - Número: número de la dirección\n" +
               "   - Sector: sector o zona\n" +
+              "   - CP: código postal\n" +
               "   - Ubicación: ubicación adicional\n" +
               "   - Cliente: nombre del cliente\n" +
               "   - Teléfono: número de teléfono\n\n" +
@@ -208,6 +210,7 @@ export async function POST(request: NextRequest) {
               '      "calle": "nombre de la calle",\n' +
               '      "numero": "número de dirección",\n' +
               '      "sector": "sector o zona",\n' +
+              '      "cp": "código postal (columna CP)",\n' +
               '      "ubicacion": "ubicación adicional o referencia",\n' +
               '      "cliente": "nombre del cliente",\n' +
               '      "telefono": "número de teléfono"\n' +
@@ -216,6 +219,7 @@ export async function POST(request: NextRequest) {
               "}\n\n" +
               "IMPORTANTE:\n" +
               "- Extrae TODAS las filas de entregas que encuentres en el documento\n" +
+              "- Busca la columna 'CP' para el código postal\n" +
               "- Si encuentras caracteres corruptos tipo 'Ã±', 'Ã³', 'Ã¡', corrígelos a ñ, ó, á\n" +
               "- Si algún campo está vacío, usa una cadena vacía \"\"\n" +
               "- Retorna SOLO el objeto JSON, sin texto adicional ni markdown"

@@ -10,6 +10,7 @@ interface Delivery {
   calle: string;
   numero: string;
   sector: string;
+  cp: string;
   ubicacion: string;
   cliente: string;
   telefono: string;
@@ -350,14 +351,27 @@ export default function Page() {
             <div className="mt-4">
               <button
                 onClick={() => {
-                  const json = JSON.stringify(deliveryData, null, 2);
+                  // Crear array de direcciones completas para geocodificación
+                  // Formato: "Calle Número, Sector, CP"
+                  // Ejemplo: "C. Mayor 1, Centro, 28013"
+                  const addresses = deliveryData.entregas.map((entrega) => {
+                    const parts = [
+                      `${entrega.calle} ${entrega.numero}`.trim(),
+                      entrega.sector,
+                      entrega.cp,
+                    ].filter(Boolean); // Eliminar valores vacíos
+
+                    return parts.join(', ');
+                  });
+
+                  const json = JSON.stringify(addresses, null, 2);
                   const blob = new Blob([json], {
                     type: 'application/json;charset=utf-8',
                   });
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
-                  a.download = `ruta-${deliveryData.fecha}-${deliveryData.conductor}.json`;
+                  a.download = `direcciones-${deliveryData.fecha}-${deliveryData.conductor}.json`;
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
