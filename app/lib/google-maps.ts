@@ -40,6 +40,126 @@ export function getGoogleCloudProjectId(): string {
 }
 
 /**
+ * Obtiene las credenciales del service account desde las variables de entorno
+ * @throws Error si las credenciales no están configuradas
+ */
+export function getServiceAccountCredentials(): {
+  client_email: string;
+  private_key: string;
+} {
+  const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_CREDENTIALS;
+
+  if (!credentials) {
+    throw new Error(
+      'GOOGLE_SERVICE_ACCOUNT_CREDENTIALS no está configurada en las variables de entorno. ' +
+      'Por favor, añade el JSON completo del service account a esta variable'
+    );
+  }
+
+  try {
+    const parsed = JSON.parse(credentials);
+
+    if (!parsed.client_email || !parsed.private_key) {
+      throw new Error('El JSON del service account debe contener client_email y private_key');
+    }
+
+    return {
+      client_email: parsed.client_email,
+      private_key: parsed.private_key,
+    };
+  } catch (error) {
+    throw new Error(
+      'Error al parsear GOOGLE_SERVICE_ACCOUNT_CREDENTIALS: ' +
+      (error instanceof Error ? error.message : 'JSON inválido')
+    );
+  }
+}
+
+/**
+ * Genera un JWT para autenticación con Google Cloud APIs
+ * @param serviceAccount Credenciales del service account
+ * @param scope Scope requerido para la API
+ * @returns JWT firmado
+ */
+async function createJWT(
+  serviceAccount: { client_email: string; private_key: string },
+  scope: string
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const expiry = now + 3600; // 1 hora
+
+  // Header del JWT
+  const header = {
+    alg: 'RS256',
+    typ: 'JWT',
+  };
+
+  // Payload del JWT
+  const payload = {
+    iss: serviceAccount.client_email,
+    scope,
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: expiry,
+    iat: now,
+  };
+
+  // Codificar en base64url
+  const base64url = (input: string) =>
+    Buffer.from(input)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+
+  const headerEncoded = base64url(JSON.stringify(header));
+  const payloadEncoded = base64url(JSON.stringify(payload));
+  const signatureInput = `${headerEncoded}.${payloadEncoded}`;
+
+  // Firmar con la clave privada usando crypto de Node.js
+  const crypto = await import('crypto');
+  const sign = crypto.createSign('RSA-SHA256');
+  sign.update(signatureInput);
+  const signature = sign.sign(serviceAccount.private_key, 'base64');
+  const signatureEncoded = signature.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+
+  return `${signatureInput}.${signatureEncoded}`;
+}
+
+/**
+ * Obtiene un access token de OAuth2 usando las credenciales del service account
+ * @returns Access token válido para Google Cloud APIs
+ */
+export async function getGoogleCloudAccessToken(): Promise<string> {
+  const serviceAccount = getServiceAccountCredentials();
+  const scope = 'https://www.googleapis.com/auth/cloud-platform';
+
+  // Crear JWT
+  const jwt = await createJWT(serviceAccount, scope);
+
+  // Intercambiar JWT por access token
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(
+      `Error al obtener access token: ${response.status} - ${JSON.stringify(error)}`
+    );
+  }
+
+  const data = await response.json();
+  return data.access_token;
+}
+
+/**
  * Obtiene las coordenadas del almacén desde las variables de entorno
  * @returns Coordenadas del almacén o coordenadas por defecto (Valladolid)
  */
@@ -104,7 +224,7 @@ export const ROUTE_OPTIMIZATION_CONFIG = {
  * Valida que una dirección sea válida para geocodificación
  */
 export function isValidAddress(address: string): boolean {
-  return address && address.trim().length > 0;
+  return Boolean(address && address.trim().length > 0);
 }
 
 /**

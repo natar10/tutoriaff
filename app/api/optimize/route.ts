@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  getGoogleMapsApiKey,
   getGoogleCloudProjectId,
+  getGoogleCloudAccessToken,
   getRouteOptimizationUrl,
   ROUTE_OPTIMIZATION_CONFIG,
   calculateRouteCost,
@@ -20,9 +20,11 @@ import { OptimizeRequest, OptimizedRoute, OptimizedDelivery } from '@/types/deli
  */
 export async function POST(request: NextRequest) {
   try {
-    // Validar que la API key y el ID del proyecto estén configurados
-    const apiKey = getGoogleMapsApiKey();
+    // Obtener credenciales de autenticación OAuth2
     const projectId = getGoogleCloudProjectId();
+
+    console.log('[Route Optimization] Obteniendo access token de OAuth2...');
+    const accessToken = await getGoogleCloudAccessToken();
 
     // Parsear el body de la solicitud
     const body = (await request.json()) as OptimizeRequest;
@@ -70,11 +72,19 @@ export async function POST(request: NextRequest) {
     );
 
     // Preparar el tiempo de inicio (ahora o el especificado)
-    const startTime = body.startTime || new Date().toISOString();
-    const endTime = new Date(
-      new Date(startTime).getTime() +
-        ROUTE_OPTIMIZATION_CONFIG.timeWindowHours * 60 * 60 * 1000
-    ).toISOString();
+    // IMPORTANTE: Google Route Optimization API requiere timestamps sin nanosegundos
+    // Formato: 2024-01-15T10:00:00Z (sin milisegundos)
+    const formatTimestamp = (date: Date): string => {
+      return date.toISOString().split('.')[0] + 'Z';
+    };
+
+    const startDate = body.startTime ? new Date(body.startTime) : new Date();
+    const endDate = new Date(
+      startDate.getTime() + ROUTE_OPTIMIZATION_CONFIG.timeWindowHours * 60 * 60 * 1000
+    );
+
+    const startTime = formatTimestamp(startDate);
+    const endTime = formatTimestamp(endDate);
 
     // Construir el payload para Route Optimization API
     // Documentación: https://developers.google.com/maps/documentation/route-optimization
@@ -133,17 +143,16 @@ export async function POST(request: NextRequest) {
 
     // Llamar a la API de Route Optimization
     // URL incluye el ID del proyecto: /v1/projects/{PROJECT_ID}:optimizeTours
-    const response = await fetch(
-      `${getRouteOptimizationUrl(projectId)}?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-FieldMask': 'routes,metrics',
-        },
-        body: JSON.stringify(optimizationPayload),
-      }
-    );
+    // Autenticación con OAuth2 Bearer token (no API key)
+    const response = await fetch(getRouteOptimizationUrl(projectId), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+        'X-Goog-FieldMask': 'routes,metrics',
+      },
+      body: JSON.stringify(optimizationPayload),
+    });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
