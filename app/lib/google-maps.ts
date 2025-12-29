@@ -256,3 +256,96 @@ export function calculateRouteCost(distanceMeters: number, durationSeconds: numb
 
   return parseFloat((distanceCost + timeCost).toFixed(2));
 }
+
+/**
+ * Genera un link de Google Maps para una ubicación individual
+ * @param lat Latitud del destino
+ * @param lng Longitud del destino
+ * @param originLat Latitud de origen (opcional, para incluir ruta desde origen)
+ * @param originLng Longitud de origen (opcional, para incluir ruta desde origen)
+ * @returns URL de Google Maps
+ */
+export function generateGoogleMapsLink(
+  lat: number,
+  lng: number,
+  originLat?: number,
+  originLng?: number
+): string {
+  const baseUrl = 'https://www.google.com/maps/dir/';
+
+  if (originLat !== undefined && originLng !== undefined) {
+    // Link con origen y destino (para navegación)
+    return `${baseUrl}?api=1&origin=${originLat},${originLng}&destination=${lat},${lng}&travelmode=driving`;
+  } else {
+    // Link solo al destino
+    return `${baseUrl}?api=1&destination=${lat},${lng}`;
+  }
+}
+
+/**
+ * Genera un link de Google Maps con múltiples paradas (ruta completa)
+ * @param waypoints Array de coordenadas {lat, lng} en el orden de la ruta
+ * @param originLat Latitud de origen (almacén)
+ * @param originLng Longitud de origen (almacén)
+ * @returns URL de Google Maps o array de URLs si hay más de 9 waypoints
+ */
+export function generateCompleteRouteLink(
+  waypoints: Array<{ lat: number; lng: number }>,
+  originLat: number,
+  originLng: number
+): string | string[] {
+  const MAX_WAYPOINTS = 9;
+
+  // Si no hay waypoints, devolver solo el origen
+  if (waypoints.length === 0) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${originLat},${originLng}`;
+  }
+
+  // Si hay 1 sola parada, ruta simple: origen -> destino -> origen
+  if (waypoints.length === 1) {
+    return `https://www.google.com/maps/dir/?api=1&origin=${originLat},${originLng}&destination=${originLat},${originLng}&waypoints=${waypoints[0].lat},${waypoints[0].lng}&travelmode=driving`;
+  }
+
+  // Si hay <= 9 waypoints, una sola URL
+  if (waypoints.length <= MAX_WAYPOINTS) {
+    const waypointsStr = waypoints
+      .slice(0, -1) // Todas menos la última
+      .map((wp) => `${wp.lat},${wp.lng}`)
+      .join('|');
+
+    const lastWaypoint = waypoints[waypoints.length - 1];
+
+    return `https://www.google.com/maps/dir/?api=1&origin=${originLat},${originLng}&destination=${lastWaypoint.lat},${lastWaypoint.lng}&waypoints=${waypointsStr}&travelmode=driving`;
+  }
+
+  // Si hay más de 9 waypoints, dividir en múltiples rutas
+  const routes: string[] = [];
+
+  for (let i = 0; i < waypoints.length; i += MAX_WAYPOINTS) {
+    const chunk = waypoints.slice(i, i + MAX_WAYPOINTS);
+
+    if (chunk.length === 0) continue;
+
+    const isFirstChunk = i === 0;
+    const origin = isFirstChunk
+      ? `${originLat},${originLng}`
+      : `${waypoints[i - 1].lat},${waypoints[i - 1].lng}`;
+
+    const destination = chunk[chunk.length - 1];
+    const intermediateWaypoints = chunk.slice(0, -1);
+
+    let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination.lat},${destination.lng}`;
+
+    if (intermediateWaypoints.length > 0) {
+      const waypointsStr = intermediateWaypoints
+        .map((wp) => `${wp.lat},${wp.lng}`)
+        .join('|');
+      url += `&waypoints=${waypointsStr}`;
+    }
+
+    url += '&travelmode=driving';
+    routes.push(url);
+  }
+
+  return routes;
+}

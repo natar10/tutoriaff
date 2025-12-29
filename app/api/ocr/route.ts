@@ -1,22 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // Interfaces para el modelo de datos
-interface Delivery {
-  codigo: string;
-  articulo: string;
-  calle: string;
-  numero: string;
-  sector: string;
-  cp: string;
-  ubicacion: string;
-  cliente: string;
+export interface RawDelivery {
+  id: string;
+  blts: string;
+  personaContacto: string;
   telefono: string;
+  calle: string;
+  cp: string;
+  ciudad: string;
+  cliente: string;
+  ubicacionNave: string;
 }
 
 interface DeliveryRoute {
   fecha: string;
   conductor: string;
-  entregas: Delivery[];
+  entregas: RawDelivery[];
 }
 
 export async function POST(request: NextRequest) {
@@ -154,15 +154,15 @@ export async function POST(request: NextRequest) {
               "   - Fecha de la ruta (puede estar en formato DD/MM/YYYY o similar)\n" +
               "   - Nombre del conductor o sección (ejemplo: 'ARTURO', puede estar en mayúsculas)\n\n" +
               "2. TABLA DE ENTREGAS (extrae TODAS las filas de la tabla con estas columnas):\n" +
-              "   - Código: código del paquete/pedido\n" +
-              "   - Artículo: descripción del producto\n" +
-              "   - Calle: nombre de la calle\n" +
-              "   - Número: número de la dirección\n" +
-              "   - Sector: sector o zona\n" +
-              "   - CP: código postal\n" +
-              "   - Ubicación: ubicación adicional\n" +
-              "   - Cliente: nombre del cliente\n" +
+              "   - Id: código del paquete/pedido\n" +
+              "   - BLT: Numero de Bultos\n" +
+              "   - Persona de contacto: *Persona de contacto\n" +
               "   - Teléfono: número de teléfono\n\n" +
+              "   - Calle: nombre de la calle\n" +
+              "   - CP: código postal\n" +
+              "   - Ciudad: * Ciudad\n" +
+              "   - Cliente: nombre del cliente\n" +
+              "   - UBI: ubicación en la nave\n" +
               "IMPORTANTE: Si encuentras caracteres corruptos tipo 'Ã±', 'Ã³', 'Ã¡', etc., " +
               "corrígelos a sus equivalentes correctos: ñ, ó, á, etc.\n\n" +
               "FORMATO DE SALIDA:\n" +
@@ -205,15 +205,15 @@ export async function POST(request: NextRequest) {
               '  "conductor": "nombre del conductor o sección extraído del documento",\n' +
               '  "entregas": [\n' +
               "    {\n" +
-              '      "codigo": "código del paquete",\n' +
-              '      "articulo": "descripción del producto",\n' +
+              '      "id": "código id del paquete",\n' +
+              '      "blts": "numero de bultos",\n' +
+              '      "personaContacto": "persona de contacto",\n' +
+              '      "telefono": "número de teléfono",\n' +
               '      "calle": "nombre de la calle",\n' +
-              '      "numero": "número de dirección",\n' +
-              '      "sector": "sector o zona",\n' +
               '      "cp": "código postal (columna CP)",\n' +
-              '      "ubicacion": "ubicación adicional o referencia",\n' +
+              '      "ciudad": "Columna Ciudad",\n' +
               '      "cliente": "nombre del cliente",\n' +
-              '      "telefono": "número de teléfono"\n' +
+              '      "ubicacionNave": "UBI ubicacion de la nave",\n' +
               "    }\n" +
               "  ]\n" +
               "}\n\n" +

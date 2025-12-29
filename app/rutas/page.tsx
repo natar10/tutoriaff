@@ -2,25 +2,33 @@
 
 import { useState } from 'react';
 import { lusitana } from '@/app/ui/fonts';
+import { generateGoogleMapsLink, generateCompleteRouteLink } from '@/app/lib/google-maps';
+import { RawDelivery } from '../api/ocr/route';
 
 // Interfaces para el modelo de datos
-interface Delivery {
-  codigo: string;
-  articulo: string;
-  calle: string;
-  numero: string;
-  sector: string;
-  cp: string;
-  ubicacion: string;
-  cliente: string;
-  telefono: string;
+interface Delivery extends RawDelivery {
   direccionCompleta?: string;
+  lat?: number;
+  lng?: number;
 }
 
 interface DeliveryRoute {
   fecha: string;
   conductor: string;
   entregas: Delivery[];
+}
+
+interface OptimizedDelivery extends Delivery {
+  orderIndex: number;
+  distanceFromPrevious?: number;
+  estimatedArrival?: string;
+}
+
+interface OptimizedRoute {
+  optimizedDeliveries: OptimizedDelivery[];
+  totalDistanceMeters: number;
+  totalDurationSeconds: number;
+  estimatedCost: number;
 }
 
 export default function Page() {
@@ -31,6 +39,11 @@ export default function Page() {
   const [error, setError] = useState<string>('');
   const [processingMethod, setProcessingMethod] = useState<string>('');
   const [pdfInfo, setPdfInfo] = useState<any>(null);
+
+  // Estados para la optimización de rutas
+  const [isGeneratingRoute, setIsGeneratingRoute] = useState(false);
+  const [optimizedRoute, setOptimizedRoute] = useState<OptimizedRoute | null>(null);
+  const [routeError, setRouteError] = useState<string>('');
 
   // Función para corregir caracteres especiales corruptos
   const fixCorruptedCharacters = (text: string): string => {
@@ -82,6 +95,8 @@ export default function Page() {
     setError('');
     setExtractedText('');
     setDeliveryData(null);
+    setOptimizedRoute(null); // Limpiar ruta anterior
+    setRouteError('');
 
     const formData = new FormData();
     formData.append('pdf', file);
@@ -126,8 +141,112 @@ export default function Page() {
     }
   };
 
+  // Función para generar la ruta optimizada
+  const handleGenerateRoute = async () => {
+    if (!deliveryData || !deliveryData.entregas || deliveryData.entregas.length === 0) {
+      setRouteError('No hay entregas para optimizar');
+      return;
+    }
+
+    setIsGeneratingRoute(true);
+    setRouteError('');
+    setOptimizedRoute(null);
+
+    try {
+      // Paso 1: Crear array de direcciones para geocodificación
+      // Formato: "Calle Número, Sector, CP"
+      const addresses = deliveryData.entregas.map((entrega) => {
+        const parts = [
+          `${entrega.calle}`.trim(),
+          entrega.ciudad,
+          entrega.cp,
+        ].filter(Boolean);
+        return parts.join(', ');
+      });
+
+      console.log('[Generar Ruta] Geocodificando', addresses.length, 'direcciones...');
+
+      // Paso 2: Llamar a /api/geocode
+      const geocodeResponse = await fetch('/api/geocode', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ addresses }),
+      });
+
+      if (!geocodeResponse.ok) {
+        throw new Error('Error al geocodificar las direcciones');
+      }
+
+      const geocodeData = await geocodeResponse.json();
+      console.log('[Generar Ruta] Geocodificación completa:', geocodeData);
+
+      // Verificar que todas las direcciones se geocodificaron
+      if (geocodeData.summary.failed > 0) {
+        setRouteError(
+          `No se pudieron geocodificar ${geocodeData.summary.failed} de ${geocodeData.summary.total} direcciones`
+        );
+      }
+
+      // Paso 3: Combinar entregas con coordenadas
+      const deliveriesWithCoords = deliveryData.entregas.map((entrega, index) => {
+        const geocoded = geocodeData.results[index];
+        return {
+          ...entrega,
+          lat: geocoded.lat,
+          lng: geocoded.lng,
+          direccionCompleta: geocoded.formattedAddress,
+        };
+      });
+
+      // Filtrar solo las que tienen coordenadas
+      const validDeliveries = deliveriesWithCoords.filter((d) => d.lat && d.lng);
+
+      if (validDeliveries.length === 0) {
+        throw new Error('No se pudo geocodificar ninguna dirección');
+      }
+
+      console.log('[Generar Ruta] Optimizando', validDeliveries.length, 'entregas...');
+
+      // Paso 4: Obtener ubicación del almacén desde variables de entorno
+      const warehouseLocation = {
+        lat: parseFloat(process.env.NEXT_PUBLIC_WAREHOUSE_LAT || '41.599159'),
+        lng: parseFloat(process.env.NEXT_PUBLIC_WAREHOUSE_LNG || '-4.673977'),
+      };
+
+      // Paso 5: Llamar a /api/optimize
+      const optimizeResponse = await fetch('/api/optimize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          deliveries: validDeliveries,
+          warehouseLocation,
+        }),
+      });
+
+      if (!optimizeResponse.ok) {
+        const errorData = await optimizeResponse.json();
+        throw new Error(errorData.error || 'Error al optimizar la ruta');
+      }
+
+      const optimizedData = await optimizeResponse.json();
+      console.log('[Generar Ruta] Optimización completa:', optimizedData);
+
+      // Paso 6: Guardar la ruta optimizada
+      setOptimizedRoute(optimizedData);
+    } catch (err) {
+      console.error('[Generar Ruta] Error:', err);
+      setRouteError(err instanceof Error ? err.message : 'Error al generar la ruta');
+    } finally {
+      setIsGeneratingRoute(false);
+    }
+  };
+
   return (
-    <main className="max-w-6xl mx-auto p-6">
+    <main className="max-w-6xl mx-auto">
       <h1 className={`${lusitana.className} mb-2 text-3xl font-bold text-center`}>
         Sistema de Digitalización de Rutas de Entrega
       </h1>
@@ -135,7 +254,7 @@ export default function Page() {
         Procesamiento OCR de manifiestos de entrega con corrección automática de caracteres
       </p>
 
-      <div className="rounded-lg bg-gray-50 p-6 shadow-sm mb-6">
+      <div className="rounded-lg bg-gray-50 p-2 shadow-sm mb-6">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label
@@ -173,7 +292,7 @@ export default function Page() {
       </div>
 
       {extractedText && (
-        <div className="rounded-lg bg-gray-50 p-6 shadow-sm">
+        <div className="rounded-lg bg-gray-50 p-2 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
             <h2 className={`${lusitana.className} text-xl`}>
               Resultados de la Digitalización
@@ -243,40 +362,32 @@ export default function Page() {
               <h3 className={`${lusitana.className} mb-4 text-lg text-gray-800`}>
                 Lista de Entregas ({deliveryData.entregas.length})
               </h3>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4">
                 {deliveryData.entregas.map((entrega, index) => (
                   <div
                     key={index}
                     className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
                   >
                     {/* Dirección principal */}
-                    <div className="mb-2">
+                    <div className="mb-2 grid grid-cols-1 gap-2 md:grid-cols-3">
                       <h4 className="text-lg font-bold text-gray-900">
-                        {entrega.calle} {entrega.numero}
+                        {entrega.calle}
+                      </h4>
+                      <h4 className="text-lg font-bold text-gray-900">
+                        | zipcode: {entrega.cp}
+                      </h4>
+                      <h4 className="text-lg font-bold text-gray-900">
+                        | <span className="font-medium">Cliente:</span> {entrega.cliente}
                       </h4>
                       <p className="text-xs uppercase tracking-wide text-gray-500">
-                        {entrega.sector}
+                        {entrega.ciudad}
                       </p>
                     </div>
 
                     {/* Ubicación */}
-                    {entrega.ubicacion && (
-                      <p className="mb-3 text-sm text-gray-700">
-                        📍 {entrega.ubicacion}
-                      </p>
-                    )}
-
-                    {/* Cliente */}
-                    {entrega.cliente && (
-                      <p className="mb-2 text-sm text-gray-600">
-                        <span className="font-medium">Cliente:</span> {entrega.cliente}
-                      </p>
-                    )}
-
-                    {/* Artículo */}
-                    {entrega.articulo && (
-                      <p className="mb-3 line-clamp-2 text-xs text-gray-500">
-                        {entrega.articulo}
+                    {entrega.ubicacionNave && (
+                      <p className="mb-3 text-md text-gray-700">
+                        <b>Coordenada: </b> {entrega.ubicacionNave} | <b>Bultos: </b>{entrega.blts}
                       </p>
                     )}
 
@@ -285,33 +396,22 @@ export default function Page() {
                       <div className="mb-3 flex gap-2">
                         <a
                           href={`tel:${entrega.telefono.replace(/\s/g, '')}`}
-                          className="flex flex-1 items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+                          className="flex gap-2"
                         >
                           <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
                             <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
                           </svg>
-                          Llamar
-                        </a>
-                        <a
-                          href={`https://wa.me/${entrega.telefono.replace(/\D/g, '')}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex flex-1 items-center justify-center gap-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700"
-                        >
-                          <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
-                          </svg>
-                          WhatsApp
+                          <b>{entrega.telefono}</b>
                         </a>
                       </div>
                     )}
 
                     {/* Código */}
                     <div className="border-t border-gray-200 pt-2">
-                      <p className="text-xs text-gray-400">
-                        Código:{' '}
+                      <p className="text-md text-gray-400">
+                        Código ID:{' '}
                         <span className="font-mono font-medium text-gray-600">
-                          {entrega.codigo}
+                          {entrega.id}
                         </span>
                       </p>
                     </div>
@@ -348,37 +448,227 @@ export default function Page() {
           )}
 
           {deliveryData && (
-            <div className="mt-4">
+            <div className="mt-4 flex gap-3">
               <button
-                onClick={() => {
-                  // Crear array de direcciones completas para geocodificación
-                  // Formato: "Calle Número, Sector, CP"
-                  // Ejemplo: "C. Mayor 1, Centro, 28013"
-                  const addresses = deliveryData.entregas.map((entrega) => {
-                    const parts = [
-                      `${entrega.calle} ${entrega.numero}`.trim(),
-                      entrega.sector,
-                      entrega.cp,
-                    ].filter(Boolean); // Eliminar valores vacíos
-
-                    return parts.join(', ');
-                  });
-
-                  const json = JSON.stringify(addresses, null, 2);
-                  const blob = new Blob([json], {
-                    type: 'application/json;charset=utf-8',
-                  });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `direcciones-${deliveryData.fecha}-${deliveryData.conductor}.json`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}
-                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
+                onClick={handleGenerateRoute}
+                disabled={isGeneratingRoute}
+                className="rounded-lg bg-green-600 px-4 py-2 text-lg font-medium text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400"
               >
-                Exportar JSON
+                {isGeneratingRoute ? 'Generando ruta...' : 'GENERAR RUTA'}
               </button>
+            </div>
+          )}
+
+          {/* Error de generación de ruta */}
+          {routeError && (
+            <div className="mt-4 rounded-md bg-red-50 p-4">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-red-800">Error al generar la ruta</h3>
+                  <div className="mt-2 text-sm text-red-700">
+                    <p>{routeError}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Ruta optimizada */}
+          {optimizedRoute && (
+            <div className="mt-6 rounded-lg bg-white p-6 shadow-md">
+              <h2 className="mb-4 text-xl font-bold text-gray-800">Ruta Optimizada</h2>
+
+              {/* Métricas de la ruta */}
+              <div className="mb-6 grid grid-cols-3 gap-4">
+                <div className="rounded-lg bg-blue-50 p-4">
+                  <p className="text-xs text-gray-600">Distancia Total</p>
+                  <p className="text-2xl font-bold text-blue-700">
+                    {(optimizedRoute.totalDistanceMeters / 1000).toFixed(1)} km
+                  </p>
+                </div>
+                <div className="rounded-lg bg-green-50 p-4">
+                  <p className="text-xs text-gray-600">Tiempo Estimado</p>
+                  <p className="text-2xl font-bold text-green-700">
+                    {Math.round(optimizedRoute.totalDurationSeconds / 60)} min
+                  </p>
+                </div>
+                <div className="rounded-lg bg-purple-50 p-4">
+                  <p className="text-xs text-gray-600">Costo Estimado</p>
+                  <p className="text-2xl font-bold text-purple-700">
+                    €{optimizedRoute.estimatedCost.toFixed(2)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Botón de Ruta Completa en Google Maps */}
+              {(() => {
+                const warehouseLat = parseFloat(process.env.NEXT_PUBLIC_WAREHOUSE_LAT || '41.6523');
+                const warehouseLng = parseFloat(process.env.NEXT_PUBLIC_WAREHOUSE_LNG || '-4.7245');
+
+                const waypoints = optimizedRoute.optimizedDeliveries
+                  .filter((d) => d.lat !== undefined && d.lng !== undefined)
+                  .map((d) => ({ lat: d.lat!, lng: d.lng! }));
+
+                const routeLinks = generateCompleteRouteLink(waypoints, warehouseLat, warehouseLng);
+                const isMultipleRoutes = Array.isArray(routeLinks);
+
+                return (
+                  <div className="mb-6">
+                    {isMultipleRoutes ? (
+                      <div>
+                        <p className="mb-3 text-sm text-gray-600">
+                          Tienes {optimizedRoute.optimizedDeliveries.length} entregas. Google Maps
+                          permite máximo 9 paradas por ruta, por lo que se han dividido en{' '}
+                          {routeLinks.length} rutas:
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {routeLinks.map((link, index) => (
+                            <a
+                              key={index}
+                              href={link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
+                            >
+                              <svg
+                                className="h-5 w-5"
+                                fill="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                              </svg>
+                              Ruta {index + 1} en Google Maps
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <a
+                        href={routeLinks}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 rounded-md bg-red-600 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-red-700"
+                      >
+                        <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                        </svg>
+                        Abrir Ruta Completa en Google Maps
+                      </a>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Lista de entregas en orden */}
+              <div className="space-y-3">
+                <h3 className="mb-3 text-lg font-semibold text-gray-700">
+                  Orden de Entregas ({optimizedRoute.optimizedDeliveries.length})
+                </h3>
+                {optimizedRoute.optimizedDeliveries.map((entrega) => (
+                  <div
+                    key={entrega.id}
+                    className="rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50"
+                  >
+                    {/* Información de la entrega */}
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      
+                      <div className="grid grid-cols-12 gap-4">
+                        {/* Número de orden */}
+                        <div className="col-span-2 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-lg font-bold text-white">
+                          {entrega.orderIndex}
+                        </div>
+                        <div className="col-span-10 break-words">
+                          <h4 className="break-words font-semibold text-gray-800">
+                            {entrega.cliente}
+                          </h4>
+                          <p className="break-words text-sm text-gray-600">
+                            {entrega.calle}
+                            {entrega.ciudad}
+                          </p>
+                          <p className="break-words text-sm text-gray-500">
+                            {entrega.ubicacionNave} {entrega.cp}
+                          </p>
+                          <h4 className="font-semibold text-gray-800">
+                            ID: {entrega.id}
+                          </h4>
+                          <h4 className="font-semibold text-gray-800">
+                            Coord: {entrega.ubicacionNave} | Bultos: {entrega.blts}
+                          </h4>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        {/* Botón de Google Maps individual */}
+                        {entrega.lat !== undefined && entrega.lng !== undefined && (
+                          <a
+                            href={(() => {
+                              const warehouseLat = parseFloat(
+                                process.env.NEXT_PUBLIC_WAREHOUSE_LAT || '41.6523'
+                              );
+                              const warehouseLng = parseFloat(
+                                process.env.NEXT_PUBLIC_WAREHOUSE_LNG || '-4.7245'
+                              );
+                              return generateGoogleMapsLink(
+                                entrega.lat,
+                                entrega.lng,
+                                warehouseLat,
+                                warehouseLng
+                              );
+                            })()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-center gap-1 rounded-md bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700"
+                          >
+                            <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                            </svg>
+                            Maps
+                          </a>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        {/* Botones de contacto */}
+                        {entrega.telefono && (
+                          <div className="flex gap-4">
+                            <a
+                              href={`tel:${entrega.telefono.replace(/\s/g, '')}`}
+                              className="flex w-full justify-center rounded-md bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700"
+                            >
+                              Llamar
+                            </a>
+                            <a
+                              href={`https://wa.me/${entrega.telefono.replace(/\D/g, '')}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex w-full justify-center rounded-md bg-green-600 px-2 py-1 text-xs text-white hover:bg-green-700"
+                            >
+                              WhatsApp
+                            </a>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
+                        {entrega.estimatedArrival && (
+                          <span>
+                            Llegada estimada:{' '}
+                            {new Date(entrega.estimatedArrival).toLocaleTimeString('es-ES', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
