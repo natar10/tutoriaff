@@ -176,6 +176,24 @@ export function getWarehouseLocation(): { lat: number; lng: number } {
 }
 
 /**
+ * Obtiene las coordenadas del punto de retorno desde las variables de entorno
+ * @returns Coordenadas y nombre del punto de retorno
+ */
+export function getReturnPoint(): { lat: number; lng: number; name: string } {
+  const lat = process.env.RETURN_POINT_LAT
+    ? parseFloat(process.env.RETURN_POINT_LAT)
+    : 41.6523; // Valladolid por defecto
+
+  const lng = process.env.RETURN_POINT_LNG
+    ? parseFloat(process.env.RETURN_POINT_LNG)
+    : -4.7245; // Valladolid por defecto
+
+  const name = process.env.RETURN_POINT_NAME || 'Punto de retorno';
+
+  return { lat, lng, name };
+}
+
+/**
  * URLs de las APIs de Google Maps
  */
 export const GOOGLE_MAPS_APIS = {

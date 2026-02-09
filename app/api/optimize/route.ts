@@ -5,6 +5,7 @@ import {
   getRouteOptimizationUrl,
   ROUTE_OPTIMIZATION_CONFIG,
   calculateRouteCost,
+  getReturnPoint,
 } from '@/app/lib/google-maps';
 import { OptimizeRequest, OptimizedRoute, OptimizedDelivery } from '@/types/delivery';
 
@@ -67,8 +68,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Obtener el punto de retorno desde las variables de entorno
+    const returnPoint = getReturnPoint();
+
     console.log(
-      `[Route Optimization] Optimizando ruta para ${body.deliveries.length} entregas...`
+      `[Route Optimization] Optimizando ruta para ${body.deliveries.length} entregas con punto de retorno final...`
     );
 
     // Preparar el tiempo de inicio (ahora o el especificado)
@@ -125,8 +129,8 @@ export async function POST(request: NextRequest) {
             endWaypoint: {
               location: {
                 latLng: {
-                  latitude: body.warehouseLocation.lat,
-                  longitude: body.warehouseLocation.lng,
+                  latitude: returnPoint.lat,
+                  longitude: returnPoint.lng,
                 },
               },
             },
@@ -192,7 +196,7 @@ export async function POST(request: NextRequest) {
 
     // Mapear las visitas a entregas ordenadas
     const visits = route.visits || [];
-    const optimizedDeliveries: OptimizedDelivery[] = visits
+    const deliveryVisits = visits
       .filter((visit: any) => visit.shipmentIndex !== undefined)
       .map((visit: any, index: number) => {
         const originalDelivery = body.deliveries[visit.shipmentIndex];
@@ -202,6 +206,29 @@ export async function POST(request: NextRequest) {
           estimatedArrival: visit.startTime,
         };
       });
+
+    // Agregar el punto de retorno al final con el tiempo estimado de llegada
+    const lastVisitTime = deliveryVisits.length > 0
+      ? deliveryVisits[deliveryVisits.length - 1].estimatedArrival
+      : startTime;
+
+    const optimizedDeliveries: OptimizedDelivery[] = [
+      ...deliveryVisits,
+      {
+        id: 'RETURN_POINT',
+        codigo: 'RETURN_POINT',
+        cliente: returnPoint.name,
+        calle: '',
+        ciudad: '',
+        cp: '',
+        telefono: '',
+        ubicacionNave: '',
+        lat: returnPoint.lat,
+        lng: returnPoint.lng,
+        orderIndex: deliveryVisits.length + 1,
+        estimatedArrival: lastVisitTime, // Esto será aproximado, el API calcula el tiempo real
+      }
+    ];
 
     // Calcular totales
     const totalDistanceMeters = metrics?.totalDistance || 0;

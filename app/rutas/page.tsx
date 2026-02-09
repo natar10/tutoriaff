@@ -377,7 +377,7 @@ export default function Page() {
                         | zipcode: {entrega.cp}
                       </h4>
                       <h4 className="text-lg font-bold text-gray-900">
-                        | <span className="font-medium">Cliente:</span> {entrega.cliente}
+                        | <span className="font-medium">Cliente:</span> {entrega.personaContacto}
                       </h4>
                       <p className="text-xs uppercase tracking-wide text-gray-500">
                         {entrega.ciudad}
@@ -569,7 +569,7 @@ export default function Page() {
                 <h3 className="mb-3 text-lg font-semibold text-gray-700">
                   Orden de Entregas ({optimizedRoute.optimizedDeliveries.length})
                 </h3>
-                {optimizedRoute.optimizedDeliveries.map((entrega) => (
+                {optimizedRoute.optimizedDeliveries.reverse().map((entrega) => (
                   <div
                     key={entrega.id}
                     className="rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50"
@@ -584,14 +584,16 @@ export default function Page() {
                         </div>
                         <div className="col-span-10 break-words">
                           <h4 className="break-words font-semibold text-gray-800">
-                            {entrega.cliente}
+                            {entrega.personaContacto}
                           </h4>
                           <p className="break-words text-sm text-gray-600">
                             {entrega.calle}
+                          </p>
+                          <p className="break-words text-sm text-gray-600">
                             {entrega.ciudad}
                           </p>
                           <p className="break-words text-sm text-gray-500">
-                            {entrega.ubicacionNave} {entrega.cp}
+                            {entrega.cp}
                           </p>
                           <h4 className="font-semibold text-gray-800">
                             ID: {entrega.id}
