@@ -395,6 +395,14 @@ export default function Page() {
                   Copiar Rutas en Texto
                 </button>
               </div>
+              <div className="mb-4 flex items-center gap-3">
+                <p>
+                  Una vez que muestre la Lista de Entregas, 
+                  para generar la ruta optimizada haz click 
+                  en el botón "GENERAR RUTA" al final de esta sección.
+                  Puedes minimizar esta lista para mejor visualizacion.
+                </p>
+              </div>
               <div className={`grid grid-cols-1 gap-4 ${isDeliveryListCollapsed ? 'hidden' : ''}`}>
                 {deliveryData.entregas.map((entrega, index) => (
                   <div
@@ -581,7 +589,7 @@ export default function Page() {
                 <h3 className="mb-3 text-lg font-semibold text-gray-700">
                   Orden de Entregas ({optimizedRoute.optimizedDeliveries.length})
                 </h3>
-                {optimizedRoute.optimizedDeliveries.reverse().map((entrega) => (
+                {optimizedRoute.optimizedDeliveries.map((entrega) => (
                   <div
                     key={entrega.id}
                     className="rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50"
