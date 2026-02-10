@@ -59,6 +59,15 @@ export interface OptimizedDelivery extends Delivery {
 }
 
 /**
+ * Entrega descartada por el optimizador
+ */
+export interface SkippedDelivery {
+  index: number;
+  label: string;
+  reason: string;
+}
+
+/**
  * Resultado de optimización de ruta
  */
 export interface OptimizedRoute {
@@ -66,6 +75,7 @@ export interface OptimizedRoute {
   totalDistanceMeters: number;
   totalDurationSeconds: number;
   estimatedCost: number;
+  skippedDeliveries?: SkippedDelivery[];
   route?: {
     polyline?: string;
     legs?: RouteLeg[];

@@ -8,7 +8,7 @@ import {
   calculateRouteCost,
   getReturnPoint,
 } from '@/app/lib/google-maps';
-import { OptimizeRequest, OptimizedRoute, OptimizedDelivery } from '@/types/delivery';
+import { OptimizeRequest, OptimizedRoute, OptimizedDelivery, SkippedDelivery } from '@/types/delivery';
 
 /**
  * API Route para optimizar rutas de entrega usando Google Route Optimization API
@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`,
-        'X-Goog-FieldMask': 'routes,metrics',
+        'X-Goog-FieldMask': 'routes,metrics,skippedShipments',
       },
       body: JSON.stringify(optimizationPayload),
     });
@@ -200,16 +200,41 @@ export async function POST(request: NextRequest) {
 
     // Mapear las visitas a entregas ordenadas
     const visits = route.visits || [];
+    console.log(`[Route Optimization] Google devolvió ${visits.length} visitas para ${body.deliveries.length} entregas`);
+
+    // NOTA: Google proto3 omite shipmentIndex cuando es 0 (valor por defecto),
+    // así que usamos ?? 0 para no perder la primera entrega
     const deliveryVisits = visits
-      .filter((visit: any) => visit.shipmentIndex !== undefined)
       .map((visit: any, index: number) => {
-        const originalDelivery = body.deliveries[visit.shipmentIndex];
+        const shipmentIdx = visit.shipmentIndex ?? 0;
+        const originalDelivery = body.deliveries[shipmentIdx];
         return {
           ...originalDelivery,
           orderIndex: index + 1,
           estimatedArrival: visit.startTime,
         };
       });
+
+    // Detectar entregas descartadas comparando input vs output
+    const visitedIndices = new Set(
+      visits.map((v: any) => (v.shipmentIndex ?? 0) as number)
+    );
+
+    const skippedDeliveries: SkippedDelivery[] = body.deliveries
+      .map((delivery, idx) => ({ delivery, idx }))
+      .filter(({ idx }) => !visitedIndices.has(idx))
+      .map(({ delivery, idx }) => ({
+        index: idx,
+        label: delivery.cliente || delivery.codigo || `Entrega ${idx + 1}`,
+        reason: 'No incluida en la ruta por el optimizador',
+      }));
+
+    if (skippedDeliveries.length > 0) {
+      console.warn(
+        `[Route Optimization] ${skippedDeliveries.length} entregas descartadas:`,
+        skippedDeliveries.map((s) => `${s.label} (índice ${s.index})`).join(', ')
+      );
+    }
 
     // Agregar el punto de retorno al final con el tiempo estimado de llegada
     const lastVisitTime = deliveryVisits.length > 0
@@ -253,6 +278,7 @@ export async function POST(request: NextRequest) {
       totalDistanceMeters,
       totalDurationSeconds,
       estimatedCost,
+      skippedDeliveries: skippedDeliveries.length > 0 ? skippedDeliveries : undefined,
       route: {
         polyline: route.routePolyline?.encodedPolyline,
         legs: route.transitions?.map((transition: any) => ({
