@@ -44,6 +44,7 @@ export default function Page() {
   const [isGeneratingRoute, setIsGeneratingRoute] = useState(false);
   const [optimizedRoute, setOptimizedRoute] = useState<OptimizedRoute | null>(null);
   const [routeError, setRouteError] = useState<string>('');
+  const [isDeliveryListCollapsed, setIsDeliveryListCollapsed] = useState(false);
 
   // Función para corregir caracteres especiales corruptos
   const fixCorruptedCharacters = (text: string): string => {
@@ -246,7 +247,7 @@ export default function Page() {
   };
 
   return (
-    <main className="max-w-6xl mx-auto">
+    <main className="mx-auto pt-4 px-1 overflow-x-hidden">
       <h1 className={`${lusitana.className} mb-2 text-3xl font-bold text-center`}>
         Sistema de Digitalización de Rutas de Entrega
       </h1>
@@ -358,11 +359,43 @@ export default function Page() {
           )}
 
           {deliveryData && deliveryData.entregas && deliveryData.entregas.length > 0 ? (
-            <div className="mb-4">
-              <h3 className={`${lusitana.className} mb-4 text-lg text-gray-800`}>
-                Lista de Entregas ({deliveryData.entregas.length})
-              </h3>
-              <div className="grid grid-cols-1 gap-4">
+            <div className="mb-8">
+              <div className="mb-4 flex items-center gap-3">
+                <h3 className={`${lusitana.className} text-lg text-gray-800`}>
+                  Lista de Entregas ({deliveryData.entregas.length})
+                </h3>
+              </div>
+              <div className="mb-4 flex items-center gap-3">
+                <button
+                  onClick={() => setIsDeliveryListCollapsed(!isDeliveryListCollapsed)}
+                  className="rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-gray-300"
+                >
+                  {isDeliveryListCollapsed ? 'Expandir' : 'Minimizar'}
+                </button>
+                <button
+                  onClick={() => {
+                    const text = deliveryData.entregas
+                      .map((e, i) => {
+                        const parts = [
+                          `${i + 1}. ${e.calle}`,
+                          e.ciudad,
+                          e.cp,
+                          e.personaContacto ? `Cliente: ${e.personaContacto}` : '',
+                          e.telefono ? `Tel: ${e.telefono}` : '',
+                          e.ubicacionNave ? `Coord: ${e.ubicacionNave}` : '',
+                          e.blts ? `Bultos: ${e.blts}` : '',
+                        ].filter(Boolean);
+                        return parts.join(' | ');
+                      })
+                      .join('\n');
+                    navigator.clipboard.writeText(text);
+                  }}
+                  className="rounded-md bg-green-200 px-3 py-1 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-300"
+                >
+                  Copiar Rutas en Texto
+                </button>
+              </div>
+              <div className={`grid grid-cols-1 gap-4 ${isDeliveryListCollapsed ? 'hidden' : ''}`}>
                 {deliveryData.entregas.map((entrega, index) => (
                   <div
                     key={index}
@@ -483,27 +516,6 @@ export default function Page() {
             <div className="mt-6 rounded-lg bg-white p-6 shadow-md">
               <h2 className="mb-4 text-xl font-bold text-gray-800">Ruta Optimizada</h2>
 
-              {/* Métricas de la ruta */}
-              <div className="mb-6 grid grid-cols-3 gap-4">
-                <div className="rounded-lg bg-blue-50 p-4">
-                  <p className="text-xs text-gray-600">Distancia Total</p>
-                  <p className="text-2xl font-bold text-blue-700">
-                    {(optimizedRoute.totalDistanceMeters / 1000).toFixed(1)} km
-                  </p>
-                </div>
-                <div className="rounded-lg bg-green-50 p-4">
-                  <p className="text-xs text-gray-600">Tiempo Estimado</p>
-                  <p className="text-2xl font-bold text-green-700">
-                    {Math.round(optimizedRoute.totalDurationSeconds / 60)} min
-                  </p>
-                </div>
-                <div className="rounded-lg bg-purple-50 p-4">
-                  <p className="text-xs text-gray-600">Costo Estimado</p>
-                  <p className="text-2xl font-bold text-purple-700">
-                    €{optimizedRoute.estimatedCost.toFixed(2)}
-                  </p>
-                </div>
-              </div>
 
               {/* Botón de Ruta Completa en Google Maps */}
               {(() => {
