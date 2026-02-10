@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { validateAccessCode } from '@/app/lib/auth';
 import {
   getGoogleCloudProjectId,
   getGoogleCloudAccessToken,
@@ -20,6 +21,9 @@ import { OptimizeRequest, OptimizedRoute, OptimizedDelivery } from '@/types/deli
  * Nunca exponer la API key de Google Maps al cliente
  */
 export async function POST(request: NextRequest) {
+  const authError = validateAccessCode(request);
+  if (authError) return authError;
+
   try {
     // Obtener credenciales de autenticación OAuth2
     const projectId = getGoogleCloudProjectId();

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { validateAccessCode } from '@/app/lib/auth';
 import {
   getGoogleMapsApiKey,
   GOOGLE_MAPS_APIS,
@@ -17,6 +18,9 @@ import { OptimizeRequest, OptimizedRoute, OptimizedDelivery } from '@/types/deli
  * Response: OptimizedRoute
  */
 export async function POST(request: NextRequest) {
+  const authError = validateAccessCode(request);
+  if (authError) return authError;
+
   try {
     const apiKey = getGoogleMapsApiKey();
     const body = (await request.json()) as OptimizeRequest;

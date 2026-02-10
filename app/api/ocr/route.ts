@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { validateAccessCode } from '@/app/lib/auth';
 
 // Interfaces para el modelo de datos
 export interface RawDelivery {
@@ -20,6 +21,9 @@ interface DeliveryRoute {
 }
 
 export async function POST(request: NextRequest) {
+  const authError = validateAccessCode(request);
+  if (authError) return authError;
+
   try {
     const formData = await request.formData();
     const file = formData.get('pdf') as File;

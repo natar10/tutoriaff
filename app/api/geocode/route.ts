@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { validateAccessCode } from '@/app/lib/auth';
 import {
   getGoogleMapsApiKey,
   GOOGLE_MAPS_APIS,
@@ -19,6 +20,9 @@ import { GeocodeRequest, GeocodedAddress } from '@/types/delivery';
  * Nunca exponer la API key de Google Maps al cliente
  */
 export async function POST(request: NextRequest) {
+  const authError = validateAccessCode(request);
+  if (authError) return authError;
+
   try {
     // Validar que la API key esté configurada
     const apiKey = getGoogleMapsApiKey();

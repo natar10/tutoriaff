@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { lusitana } from '@/app/ui/fonts';
 import { generateCompleteRouteLink } from '@/app/lib/google-maps';
 import { RawDelivery } from './api/ocr/route';
@@ -32,6 +32,10 @@ interface OptimizedRoute {
 }
 
 export default function Page() {
+  const [accessCode, setAccessCode] = useState<string>('');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authError, setAuthError] = useState('');
+
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [extractedText, setExtractedText] = useState<string>('');
@@ -45,6 +49,25 @@ export default function Page() {
   const [optimizedRoute, setOptimizedRoute] = useState<OptimizedRoute | null>(null);
   const [routeError, setRouteError] = useState<string>('');
   const [isDeliveryListCollapsed, setIsDeliveryListCollapsed] = useState(false);
+
+  // Cargar código de acceso guardado en localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('app_access_code');
+    if (saved) {
+      setAccessCode(saved);
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLogin = () => {
+    if (!accessCode.trim()) {
+      setAuthError('Ingresa un código de acceso');
+      return;
+    }
+    localStorage.setItem('app_access_code', accessCode);
+    setIsAuthenticated(true);
+    setAuthError('');
+  };
 
   // Función para corregir caracteres especiales corruptos
   const fixCorruptedCharacters = (text: string): string => {
@@ -105,8 +128,16 @@ export default function Page() {
     try {
       const response = await fetch('/api/ocr', {
         method: 'POST',
+        headers: { 'x-access-code': accessCode },
         body: formData,
       });
+
+      if (response.status === 401) {
+        localStorage.removeItem('app_access_code');
+        setIsAuthenticated(false);
+        setAuthError('Código de acceso inválido');
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -172,6 +203,7 @@ export default function Page() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-access-code': accessCode,
         },
         body: JSON.stringify({ addresses }),
       });
@@ -221,6 +253,7 @@ export default function Page() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-access-code': accessCode,
         },
         body: JSON.stringify({
           deliveries: validDeliveries,
@@ -245,6 +278,40 @@ export default function Page() {
       setIsGeneratingRoute(false);
     }
   };
+
+  if (!isAuthenticated) {
+    return (
+      <main className="flex min-h-screen items-center justify-center px-4">
+        <div className="w-full max-w-sm rounded-lg bg-gray-50 p-6 shadow-sm">
+          <h1 className={`${lusitana.className} mb-4 text-2xl font-bold text-center`}>
+            Acceso Requerido
+          </h1>
+          <p className="mb-4 text-center text-sm text-gray-600">
+            Ingresa el código de acceso para usar la aplicación
+          </p>
+          {authError && (
+            <div className="mb-3 rounded-md bg-red-50 p-2 text-sm text-red-600">
+              {authError}
+            </div>
+          )}
+          <input
+            type="password"
+            value={accessCode}
+            onChange={(e) => setAccessCode(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+            placeholder="Código de acceso"
+            className="mb-3 block w-full rounded-md border border-gray-200 py-2 px-3 text-sm"
+          />
+          <button
+            onClick={handleLogin}
+            className="w-full rounded-md bg-blue-500 py-2 text-sm font-medium text-white hover:bg-blue-400"
+          >
+            Entrar
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto pt-4 px-1 overflow-x-hidden">
