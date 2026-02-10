@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { lusitana } from '@/app/ui/fonts';
-import { generateGoogleMapsLink, generateCompleteRouteLink } from '@/app/lib/google-maps';
+import { generateCompleteRouteLink } from '@/app/lib/google-maps';
 import { RawDelivery } from './api/ocr/route';
 
 // Interfaces para el modelo de datos
@@ -628,20 +628,7 @@ export default function Page() {
                         {/* Botón de Google Maps individual */}
                         {entrega.lat !== undefined && entrega.lng !== undefined && (
                           <a
-                            href={(() => {
-                              const warehouseLat = parseFloat(
-                                process.env.NEXT_PUBLIC_WAREHOUSE_LAT || '41.6523'
-                              );
-                              const warehouseLng = parseFloat(
-                                process.env.NEXT_PUBLIC_WAREHOUSE_LNG || '-4.7245'
-                              );
-                              return generateGoogleMapsLink(
-                                entrega.lat,
-                                entrega.lng,
-                                warehouseLat,
-                                warehouseLng
-                              );
-                            })()}
+                            href={`https://www.google.com/maps?q=${entrega.lat},${entrega.lng}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center justify-center gap-1 rounded-md bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700"
