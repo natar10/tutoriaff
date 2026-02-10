@@ -234,8 +234,8 @@ export const ROUTE_OPTIMIZATION_CONFIG = {
   /** Costo por hora de trabajo */
   costPerHour: 0.5,
 
-  /** Duración de ventana de tiempo en horas (jornada laboral) */
-  timeWindowHours: 8,
+  /** Duración de ventana de tiempo en horas (jornada extendida para cubrir rutas largas) */
+  timeWindowHours: 16,
 } as const;
 
 /**
